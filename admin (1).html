@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CoinTap Admin</title>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: radial-gradient(circle at 50% 0%, #1b1033 0%, #0a0612 60%, #060410 100%);
+    color: #fff; min-height: 100vh;
+  }
+  .wrap { max-width: 920px; margin: 0 auto; padding: 24px 18px 60px; }
+  h1 { font-size: 22px; font-weight: 800; margin: 0 0 4px; }
+  .sub { color: #9d92c9; font-size: 13px; margin-bottom: 22px; }
+
+  .cards { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 22px; }
+  .card {
+    flex: 1; min-width: 140px;
+    background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 14px; padding: 14px 16px;
+  }
+  .card .label { font-size: 11px; color: #9d92c9; margin-bottom: 6px; }
+  .card .value { font-size: 22px; font-weight: 800; }
+
+  .controls { display: flex; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; align-items: center; }
+  input[type="text"] {
+    flex: 1; min-width: 180px;
+    background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 10px; padding: 10px 12px; color: #fff; font-size: 13px; outline: none;
+  }
+  select {
+    background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 10px; padding: 10px 12px; color: #fff; font-size: 13px; outline: none;
+  }
+  button.refresh-btn {
+    background: linear-gradient(135deg, #7b5cff, #c46bff); border: none; color: #fff;
+    font-weight: 700; font-size: 13px; padding: 10px 16px; border-radius: 10px; cursor: pointer;
+  }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  thead th {
+    text-align: left; color: #9d92c9; font-weight: 600; font-size: 11px;
+    text-transform: uppercase; padding: 10px 12px; border-bottom: 1px solid rgba(255,255,255,0.1);
+  }
+  tbody td {
+    padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.06);
+  }
+  tbody tr:hover { background: rgba(255,255,255,0.03); }
+  .rank { color: #9d92c9; font-weight: 700; width: 36px; }
+  .uname { font-weight: 700; }
+  .uid { color: #6f6492; font-size: 11px; }
+  .coin-cell { color: #ffe27a; font-weight: 700; }
+  .level-badge {
+    display: inline-block; background: rgba(123,92,255,0.25); border: 1px solid rgba(123,92,255,0.4);
+    border-radius: 8px; padding: 3px 8px; font-size: 11px; font-weight: 700; color: #c9beff;
+  }
+  .empty { text-align: center; padding: 40px 0; color: #6f6492; }
+  .status { font-size: 12px; color: #9d92c9; margin-bottom: 14px; }
+  .status.error { color: #ff6b6b; }
+  .status.ok { color: #6bffa0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>CoinTap — Admin panel</h1>
+  <div class="sub">Barcha foydalanuvchilar va ularning tanga statistikasi</div>
+
+  <div class="status" id="connStatus">Ulanmoqda...</div>
+
+  <div class="cards">
+    <div class="card"><div class="label">Jami foydalanuvchilar</div><div class="value" id="cardUsers">0</div></div>
+    <div class="card"><div class="label">Jami yig'ilgan tanga</div><div class="value" id="cardCoins">0</div></div>
+    <div class="card"><div class="label">Jami bosishlar</div><div class="value" id="cardTaps">0</div></div>
+    <div class="card"><div class="label">O'rtacha daraja</div><div class="value" id="cardLevel">0</div></div>
+  </div>
+
+  <div class="controls">
+    <input type="text" id="searchInput" placeholder="Ism yoki ID bo'yicha qidirish...">
+    <select id="sortSelect">
+      <option value="totalEarned">Tanga (ko'p -> kam)</option>
+      <option value="balance">Joriy balans</option>
+      <option value="totalTaps">Bosishlar soni</option>
+      <option value="level">Daraja</option>
+      <option value="updatedAt">Oxirgi faollik</option>
+    </select>
+    <button class="refresh-btn" id="refreshBtn">Yangilash</button>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Foydalanuvchi</th>
+        <th>Daraja</th>
+        <th>Joriy balans</th>
+        <th>Jami tanga</th>
+        <th>Bosishlar</th>
+        <th>Oxirgi faollik</th>
+      </tr>
+    </thead>
+    <tbody id="tableBody"></tbody>
+  </table>
+  <div class="empty" id="emptyState" style="display:none;">Hozircha foydalanuvchilar yo'q</div>
+</div>
+
+<script>
+(function(){
+  // ====== FIREBASE CONFIG (cointap.html dagi bilan AYNI BIR XIL bo'lishi shart) ======
+  const firebaseConfig = {
+    apiKey: "YOUR_API_KEY",
+    authDomain: "YOUR_PROJECT.firebaseapp.com",
+    databaseURL: "https://YOUR_PROJECT-default-rtdb.firebaseio.com",
+    projectId: "YOUR_PROJECT"
+  };
+
+  const connStatus = document.getElementById('connStatus');
+  let db = null;
+  let usersData = {};
+
+  try {
+    if (firebaseConfig.apiKey === "YOUR_API_KEY") {
+      connStatus.textContent = 'Firebase config kiritilmagan. cointap.html va admin.html ichidagi firebaseConfig ni toldiring.';
+      connStatus.className = 'status error';
+    } else {
+      firebase.initializeApp(firebaseConfig);
+      db = firebase.database();
+      connStatus.textContent = 'Ulanmoqda...';
+    }
+  } catch(e) {
+    connStatus.textContent = 'Ulanish xatosi: ' + e.message;
+    connStatus.className = 'status error';
+  }
+
+  function fmt(n) {
+    n = Math.floor(n || 0);
+    if (n >= 1000000) return (n/1000000).toFixed(2) + 'M';
+    if (n >= 1000) return (n/1000).toFixed(1) + 'K';
+    return String(n);
+  }
+
+  function timeAgo(ts) {
+    if (!ts) return '-';
+    const diff = Math.floor((Date.now() - ts) / 1000);
+    if (diff < 60) return diff + ' soniya oldin';
+    if (diff < 3600) return Math.floor(diff/60) + ' daqiqa oldin';
+    if (diff < 86400) return Math.floor(diff/3600) + ' soat oldin';
+    return Math.floor(diff/86400) + ' kun oldin';
+  }
+
+  function renderTable() {
+    const searchVal = document.getElementById('searchInput').value.trim().toLowerCase();
+    const sortKey = document.getElementById('sortSelect').value;
+
+    let list = Object.keys(usersData).map(function(uid) {
+      const u = usersData[uid] || {};
+      return {
+        id: uid,
+        name: u.name || 'Noma\'lum',
+        balance: u.balance || 0,
+        totalEarned: u.totalEarned || 0,
+        totalTaps: u.totalTaps || 0,
+        level: u.level || 1,
+        updatedAt: u.updatedAt || 0
+      };
+    });
+
+    if (searchVal) {
+      list = list.filter(function(u) {
+        return u.name.toLowerCase().includes(searchVal) || u.id.toLowerCase().includes(searchVal);
+      });
+    }
+
+    list.sort(function(a, b) { return (b[sortKey] || 0) - (a[sortKey] || 0); });
+
+    const tbody = document.getElementById('tableBody');
+    tbody.innerHTML = '';
+    document.getElementById('emptyState').style.display = list.length ? 'none' : 'block';
+
+    list.forEach(function(u, idx) {
+      const tr = document.createElement('tr');
+      tr.innerHTML =
+        '<td class="rank">' + (idx + 1) + '</td>' +
+        '<td><div class="uname">' + escapeHtml(u.name) + '</div><div class="uid">ID: ' + escapeHtml(u.id) + '</div></td>' +
+        '<td><span class="level-badge">Daraja ' + u.level + '</span></td>' +
+        '<td class="coin-cell">' + fmt(u.balance) + '</td>' +
+        '<td class="coin-cell">' + fmt(u.totalEarned) + '</td>' +
+        '<td>' + u.totalTaps + '</td>' +
+        '<td>' + timeAgo(u.updatedAt) + '</td>';
+      tbody.appendChild(tr);
+    });
+
+    document.getElementById('cardUsers').textContent = list.length;
+    const totalCoins = list.reduce(function(s, u) { return s + u.totalEarned; }, 0);
+    const totalTaps = list.reduce(function(s, u) { return s + u.totalTaps; }, 0);
+    const avgLevel = list.length ? (list.reduce(function(s, u) { return s + u.level; }, 0) / list.length) : 0;
+    document.getElementById('cardCoins').textContent = fmt(totalCoins);
+    document.getElementById('cardTaps').textContent = fmt(totalTaps);
+    document.getElementById('cardLevel').textContent = avgLevel.toFixed(1);
+  }
+
+  function escapeHtml(str) {
+    return String(str).replace(/[&<>"']/g, function(c) {
+      return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c];
+    });
+  }
+
+  if (db) {
+    db.ref('users').on('value', function(snapshot) {
+      usersData = snapshot.val() || {};
+      connStatus.textContent = 'Ulandi. Jonli yangilanib turadi.';
+      connStatus.className = 'status ok';
+      renderTable();
+    }, function(error) {
+      connStatus.textContent = 'Malumot olishda xato: ' + error.message;
+      connStatus.className = 'status error';
+    });
+  }
+
+  document.getElementById('searchInput').addEventListener('input', renderTable);
+  document.getElementById('sortSelect').addEventListener('change', renderTable);
+  document.getElementById('refreshBtn').addEventListener('click', renderTable);
+})();
+</script>
+</body>
+</html>
