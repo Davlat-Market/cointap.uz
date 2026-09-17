@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://davlat-market.github.io/cointap.uz/sitemap.xml
